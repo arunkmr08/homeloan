@@ -1,0 +1,246 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Home Loan EMI Calculator with Graphs</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+    .calculator {
+      background: #fff;
+      padding: 25px;
+      border-radius: 8px;
+      max-width: 600px;
+      margin: auto;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+    .calculator h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin: 10px 0 5px;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      font-size: 16px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 20px;
+      font-size: 16px;
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .result, .charts {
+      margin-top: 20px;
+      padding: 15px;
+      background: #e9ecef;
+      border-radius: 4px;
+    }
+    canvas {
+      margin-top: 20px;
+      max-width: 100%;
+    }
+  </style>
+
+  <link rel="manifest" href="manifest.json" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(reg => console.log('Service Worker registered'))
+          .catch(err => console.error('Service Worker registration failed:', err));
+      });
+    }
+  </script>
+
+</head>
+<body>
+
+<div class="calculator">
+  <h2>Home Loan EMI Calculator</h2>
+
+  <label for="amount">Loan Amount (₹)</label>
+  <input type="number" id="amount" placeholder="e.g. 5000000" />
+
+  <label for="rate">Annual Interest Rate (%)</label>
+  <input type="number" id="rate" step="0.01" placeholder="e.g. 8.5" />
+
+  <label for="tenure">Loan Tenure (Years)</label>
+  <input type="number" id="tenure" placeholder="e.g. 20" />
+
+  <label for="customEmi">Your Monthly EMI (optional, for early payoff)</label>
+  <input type="number" id="customEmi" placeholder="e.g. 50000" />
+
+  <button onclick="calculateEMI()">Calculate</button>
+
+  <div class="result" id="result" style="display:none;">
+    <h3>Standard EMI Details</h3>
+    <p><strong>Monthly EMI:</strong> ₹<span id="emi"></span></p>
+    <p><strong>Total Interest:</strong> ₹<span id="interest"></span></p>
+    <p><strong>Total Payment:</strong> ₹<span id="total"></span></p>
+
+    <div id="customResult" style="margin-top: 20px; display:none;">
+      <h3>With Your Custom EMI</h3>
+      <p><strong>New Tenure:</strong> <span id="newTenure"></span></p>
+      <p><strong>New Total Interest:</strong> ₹<span id="newInterest"></span></p>
+      <p><strong>Interest Saved:</strong> ₹<span id="savedInterest"></span></p>
+      <p><strong>Loan Duration Saved:</strong> <span id="durationSaved"></span></p>
+    </div>
+  </div>
+
+  <button onclick="exportToPDF()">📄 Export to PDF</button><button onclick="exportToCSV()">📁 Export to CSV</button><div class="charts" id="charts" style="display:none;">
+    <h3>Visual Breakdown</h3>
+    <canvas id="breakdownChart"></canvas>
+    <canvas id="balanceChart"></canvas>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  let breakdownChart, balanceChart;
+
+  function calculateEMI() {
+    const P = parseFloat(document.getElementById('amount').value);
+    const r = parseFloat(document.getElementById('rate').value) / 100 / 12;
+    const n = parseInt(document.getElementById('tenure').value) * 12;
+    const customEMI = parseFloat(document.getElementById('customEmi').value);
+
+    if (!P || !r || !n) {
+      alert("Please fill all fields correctly.");
+      return;
+    }
+
+    const emi = (P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+    const total = emi * n;
+    const interest = total - P;
+
+    document.getElementById('emi').innerText = emi.toFixed(2);
+    document.getElementById('interest').innerText = interest.toFixed(2);
+    document.getElementById('total').innerText = total.toFixed(2);
+    document.getElementById('result').style.display = 'block';
+
+    if (customEMI && customEMI > emi) {
+      let balance = P;
+      let months = 0;
+      let totalInterest = 0;
+
+      while (balance > 0) {
+        const monthlyInterest = balance * r;
+        const principalPaid = customEMI - monthlyInterest;
+        balance -= principalPaid;
+        totalInterest += monthlyInterest;
+        months++;
+        if (months > 1000) break;
+      }
+
+      const years = Math.floor(months / 12);
+      const remMonths = months % 12;
+      const interestSaved = interest - totalInterest;
+      const durationSaved = n - months;
+
+      document.getElementById('newTenure').innerText = `${months} months (${years}y ${remMonths}m)`;
+      document.getElementById('newInterest').innerText = totalInterest.toFixed(2);
+      document.getElementById('savedInterest').innerText = interestSaved.toFixed(2);
+      document.getElementById('durationSaved').innerText = `${durationSaved} months`;
+
+      document.getElementById('customResult').style.display = 'block';
+    } else {
+      document.getElementById('customResult').style.display = 'none';
+    }
+
+    // Show charts
+    document.getElementById('charts').style.display = 'block';
+
+    // Breakdown chart (Pie)
+    const breakdownData = {
+      labels: ['Principal', 'Interest'],
+      datasets: [{
+        label: 'EMI Breakdown',
+        data: [P, interest],
+        backgroundColor: ['#28a745', '#dc3545']
+      }]
+    };
+
+    if (breakdownChart) breakdownChart.destroy();
+    breakdownChart = new Chart(document.getElementById('breakdownChart'), {
+      type: 'doughnut',
+      data: breakdownData
+    });
+
+    // Balance chart (Line)
+    let balances = [];
+    let balance = P;
+    for (let i = 0; i < n; i++) {
+      const interestPart = balance * r;
+      const principalPart = emi - interestPart;
+      balance -= principalPart;
+      balances.push(Math.max(balance, 0));
+    }
+
+    const balanceData = {
+      labels: balances.map((_, i) => i + 1),
+      datasets: [{
+        label: 'Outstanding Loan Balance',
+        data: balances,
+        borderColor: '#007bff',
+        fill: false
+      }]
+    };
+
+    if (balanceChart) balanceChart.destroy();
+    balanceChart = new Chart(document.getElementById('balanceChart'), {
+      type: 'line',
+      data: balanceData
+    });
+  }
+</script>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script>
+  function exportToPDF() {
+    const element = document.querySelector('.calculator');
+    const opt = {
+      margin:       0.5,
+      filename:     'EMI_Calculation_Report.pdf',
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2 },
+      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+  }
+
+  function exportToCSV() {
+    const emi = document.getElementById('emi').innerText;
+    const interest = document.getElementById('interest').innerText;
+    const total = document.getElementById('total').innerText;
+    const newInterest = document.getElementById('newInterest').innerText || 'N/A';
+    const interestSaved = document.getElementById('savedInterest').innerText || 'N/A';
+    const newTenure = document.getElementById('newTenure').innerText || 'N/A';
+
+    const csvContent = `Label,Value\nMonthly EMI,₹${emi}\nTotal Interest,₹${interest}\nTotal Payment,₹${total}\nNew Interest,₹${newInterest}\nInterest Saved,₹${interestSaved}\nNew Tenure,${newTenure}`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, 'EMI_Calculation_Report.csv');
+  }
+</script>
+
+</body>
+</html>
